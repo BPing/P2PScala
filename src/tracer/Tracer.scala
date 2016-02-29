@@ -1,13 +1,21 @@
 package tracer
 
 import java.net.{InetAddress, DatagramPacket, InetSocketAddress}
-
-import util.{util, Directive, UDPSocket}
-
 import scala.collection.mutable.Map
+import util.{UacInfo, util, Directive, UDPSocket}
+
+object Tracer {
+  def main(args: Array[String]) {
+    val instance = new Tracer()
+    util.log(0, "start tracer")
+    instance.start()
+  }
+}
 
 /**
   * 中心服务
+  *
+  * @author cbping
   */
 class Tracer {
 
@@ -16,11 +24,10 @@ class Tracer {
 
   private var _server: UDPSocket = null
 
-  private val _port: Int = 4321
+  private val _port: Int = util._server_port
 
-  private val _split_tag: String = "::"
-
-  private val _body_split_tag: String = "--"
+  /** 心跳失效时间 */
+  private val _expire_heart_beat: Long = 60
 
   /**
     * 探测是否能P2P连接
@@ -89,133 +96,144 @@ class Tracer {
     }
   }
 
-  /**
-    * 构建udp包
-    *
-    * @param dec
-    * @param th
-    * @param th_tag
-    * @param body
-    * @param address
-    * @param port
-    * @return
-    */
-  def msgBuilder(dec: Int, th: Int, th_tag: String, body: String, address: InetAddress = null, port: Int = 0): DatagramPacket = {
-    val msgByte: Array[Byte] = Directive.directiveBuilder(dec, th, th_tag, body, this._split_tag).getBytes()
-    return new DatagramPacket(msgByte, msgByte.length, address, port)
-  }
-
-  def msgPong(dst: DatagramPacket): DatagramPacket = {
-    return msgBuilder(Directive.PONG, 1, "00", "", dst.getAddress(), dst.getPort())
-  }
-
-  def msgRegisterSuccessfully(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
-    return msgBuilder(Directive.CONNECT_SUCCESS, 1, "00", msg, dst.getAddress(), dst.getPort())
-  }
-
-  def msgClose(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
-    return msgBuilder(Directive.CLOSE_CONNECT, 1, "00", msg, dst.getAddress(), dst.getPort())
-  }
-
-  def msgCanPeer(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
-    return msgBuilder(Directive.CAN_CONNECT_PEAR, 1, "00", msg, address, port)
-  }
-
-  def msgCanNotPeer(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
-    return msgBuilder(Directive.CAN_NOT_CONNECT_PEAR, 1, "00", msg, address, port)
-  }
-
-  def msgCanNotPeer(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
-    return msgBuilder(Directive.CAN_NOT_CONNECT_PEAR, 1, "00", msg, dst.getAddress(), dst.getPort())
-  }
-
-  def msgHoling(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
-    return msgBuilder(Directive.HOLING, 1, "00", msg, address, port)
-  }
-
-
-  def msgHoleEnd(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
-    return msgBuilder(Directive.HOLE_END, 1, "00", msg, address, port)
-  }
-
   private val _registerErr = Array[String](
     " the body of Directive.REGISTER's message is error！",
     " Directive.REGISTER fail "
   )
 
   /**
+    *
+    */
+  def checkActive(): Unit = {
+    if (!this._trace_list.isEmpty) {
+      this._trace_list.foreach(e => {
+        val (k, v) = e
+        if (v.status && util.isBiggerThreshold(v.heartbeatTime, util.getDateTime(), this._expire_heart_beat)) {
+          v.status = false
+        }
+      })
+    }
+
+  }
+
+  /**
+    * 心跳处理
+    */
+  def heartBeatHandler(): Unit = {
+    val handle = this
+    new Thread(new Runnable {
+      override def run(): Unit = {
+        while (handle != null) {
+          handle.checkActive()
+          Thread.sleep(1000) //一秒检查一次
+        }
+      }
+    }).start()
+  }
+
+  /**
     * 服务启动
     */
   def start(): Unit = {
+    try {
 
-    val buf = new Array[Byte](1024);
-    val recPacket = new DatagramPacket(buf, buf.length)
 
-    this._server = new UDPSocket(this._port)
-    val Server = this._server
+      val buf = new Array[Byte](1024)
+      val recPacket = new DatagramPacket(buf, buf.length)
 
-    while (true) {
-      Server.receive(recPacket)
-      val receiveMessage = new String(recPacket.getData())
-      val msgArr = receiveMessage.split(this._split_tag)
+      this._server = new UDPSocket(this._port)
+      val Server = this._server
 
-      util.toInt(msgArr(0)) match {
+      // this.heartBeatHandler()
 
-        case Directive.PING => {
-          //name
-          this.updateUacTime(msgArr(3))
-          Server.send(this.msgPong(recPacket))
-        }
+      while (true) {
+        util.log(0, "waiting for the packet from the client")
+        Server.receive(recPacket)
+        val receiveMessage = new String(recPacket.getData())
+        util.log(0, "the client msg: " + receiveMessage)
 
-        case Directive.REGISTER => {
-          //name--host--port
-          val bodyArr = msgArr(3).split(this._body_split_tag)
-          if (bodyArr.length < 3) {
-            util.log(Directive.REGISTER, msgArr(3) + this._registerErr(0))
-            Server.send(this.msgClose(recPacket, this._registerErr(0)))
+        val msgArr = receiveMessage.split(util._split_tag)
+        val bodyArr = msgArr(3).split(util._body_split_tag) //name--other
+
+        //判断注册状态
+        if (!this._trace_list(bodyArr(0)).status && util.toInt(msgArr(0)) != Directive.REGISTER) {
+          Server.send(Directive.msgClose(recPacket, "you should register first!"))
+        } else {
+          util.toInt(msgArr(0)) match {
+
+            case Directive.PING => {
+              //name
+              this.updateUacTime(msgArr(3))
+              Server.send(Directive.msgPong(recPacket))
+            }
+
+            case Directive.REGISTER => {
+              //name--host--port
+              if (bodyArr.length < 3) {
+                util.log(Directive.REGISTER, msgArr(3) + this._registerErr(0))
+                Server.send(Directive.msgClose(recPacket, this._registerErr(0)))
+              } else {
+
+                val UacName = bodyArr(0) + bodyArr(1) + bodyArr(2)
+
+                if (this.record(UacName, new InetSocketAddress(recPacket.getAddress(), recPacket.getPort()),
+                  new InetSocketAddress(bodyArr(1), util.toInt(bodyArr(2))))) {
+                  Server.send(Directive.msgRegisterSuccessfully(recPacket, UacName))
+                } else {
+                  util.log(Directive.REGISTER, this._registerErr(0))
+                  Server.send(Directive.msgClose(recPacket, UacName + this._registerErr(1)))
+                }
+              }
+            }
+
+            case Directive.UNREGISTER => {
+              //name
+              if (this.record(msgArr(3), null, null, false)) {
+                Server.send(Directive.msgClose(recPacket))
+              }
+
+            }
+
+            case Directive.CONNECT_PEAR_REQUEST => {
+              //nameA--nameB
+              if (!this.detect(bodyArr(0), bodyArr(1)) || bodyArr(0).equals(bodyArr(1))) {
+                Server.send(Directive.msgCanNotPeer(recPacket, msgArr(0) + util._body_split_tag + "A or B not exist or A==B"))
+              } else {
+                val UacA = this._trace_list(bodyArr(0))
+                val UacB = this._trace_list(bodyArr(1))
+                val msgStrB: String = msgArr(3) + util._body_split_tag + util.addressToString(UacA.publicAddress) + util._body_split_tag + util.addressToString(UacA.localAddress)
+                Server.send(Directive.msgHoling(UacB.publicAddress.getAddress(), UacB.publicAddress.getPort(), msgStrB))
+
+                val msgStrA: String = msgArr(3) + util._body_split_tag + util.addressToString(UacB.publicAddress) + util._body_split_tag + util.addressToString(UacB.localAddress)
+                Server.send(Directive.msgHoling(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgStrA))
+              }
+            }
+
+            case Directive.HOLE_END => {
+              //nameA--nameB
+              val UacA = this._trace_list(bodyArr(0))
+              Server.send(Directive.msgHoleEnd(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgArr(3)))
+            }
+
+            case Directive.USER_LIST => {
+              var msgStr: String = "list"
+              if (!this._trace_list.isEmpty) {
+                this._trace_list.foreach(e => {
+                  val (k, v) = e
+                  msgStr = msgStr + util._body_split_tag + k
+                })
+              }
+              Server.send(Directive.msgUserList(recPacket, msgStr))
+            }
           }
-
-          val UacName = bodyArr(0) + bodyArr(1) + bodyArr(2)
-
-          if (this.record(UacName, new InetSocketAddress(recPacket.getAddress(), recPacket.getPort()),
-            new InetSocketAddress(bodyArr(1), util.toInt(bodyArr(2))))) {
-            Server.send(this.msgRegisterSuccessfully(recPacket, UacName))
-          } else {
-            util.log(Directive.REGISTER, this._registerErr(0))
-            Server.send(this.msgClose(recPacket, UacName + this._registerErr(1)))
-          }
         }
-
-        case Directive.UNREGISTER => {
-          //name
-          if (this.record(msgArr(3), null, null, false)) {
-            Server.send(this.msgClose(recPacket))
-          }
-
-        }
-
-        case Directive.CONNECT_PEAR_REQUEST => {
-          //nameA--nameB
-          val bodyArr = msgArr(3).split(this._body_split_tag)
-          if (!this.detect(bodyArr(0), bodyArr(1)) || bodyArr(0).equals(bodyArr(1))) {
-            Server.send(this.msgCanNotPeer(recPacket, "A or B not exist or A==B"))
-          }
-          val UacB = this._trace_list(bodyArr(1))
-          Server.send(this.msgHoling(UacB.publicAddress.getAddress(), UacB.publicAddress.getPort(), msgArr(3)))
-        }
-
-        case Directive.HOLE_END => {
-          //nameA--nameB
-          val bodyArr = msgArr(3).split(this._body_split_tag)
-          val UacA = this._trace_list(bodyArr(0))
-          Server.send(this.msgHoleEnd(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgArr(3)))
-        }
-
 
       }
-
+    } catch {
+      case ex: Exception => {
+        util.log(-1, "some exception happen,please restart the tracer")
+      }
     }
-
 
   }
 

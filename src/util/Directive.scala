@@ -1,5 +1,7 @@
 package util
 
+import java.net.{DatagramPacket, InetAddress}
+
 /**
   * 指令
   */
@@ -50,5 +52,63 @@ object Directive {
   def directiveBuilder(dec: Int, th: Int, th_tag: String, body: String, split_tag: String): String = {
 
     return dec.toString() + split_tag + th.toString() + split_tag + th_tag + split_tag + body
+  }
+
+
+  /**
+    * 构建udp包
+    *
+    * @param dec
+    * @param th
+    * @param th_tag
+    * @param body
+    * @param address
+    * @param port
+    * @return
+    */
+  def msgBuilder(dec: Int, th: Int, th_tag: String, body: String, address: InetAddress = null, port: Int = 0): DatagramPacket = {
+    val msgByte: Array[Byte] = this.directiveBuilder(dec, th, th_tag, body, util._split_tag).getBytes()
+    return new DatagramPacket(msgByte, msgByte.length, address, port)
+  }
+
+  def msgPong(dst: DatagramPacket): DatagramPacket = {
+    return this.msgBuilder(Directive.PONG, 1, "00", "", dst.getAddress(), dst.getPort())
+  }
+
+  def msgRegisterSuccessfully(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.CONNECT_SUCCESS, 1, "00", msg, dst.getAddress(), dst.getPort())
+  }
+
+  def msgClose(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.CLOSE_CONNECT, 1, "00", msg, dst.getAddress(), dst.getPort())
+  }
+
+  def msgCanPeer(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.CAN_CONNECT_PEAR, 1, "00", msg, address, port)
+  }
+
+  //  def msgCanNotPeer(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+  //    return this.msgBuilder(Directive.CAN_NOT_CONNECT_PEAR, 1, "00", msg, address, port)
+  //  }
+
+  def msgCanNotPeer(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.CAN_NOT_CONNECT_PEAR, 1, "00", msg, dst.getAddress(), dst.getPort())
+  }
+
+  def msgHoling(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.HOLING, 1, "00", msg, address, port)
+  }
+
+
+  def msgHoleEnd(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.HOLE_END, 1, "00", msg, address, port)
+  }
+
+  def msgRegister(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.UNREGISTER, 1, "00", msg, address, port)
+  }
+
+  def msgUserList(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.USER_LIST, 1, "00", msg, dst.getAddress(), dst.getPort())
   }
 }
