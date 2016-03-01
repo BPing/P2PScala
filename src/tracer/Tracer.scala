@@ -135,9 +135,8 @@ class Tracer {
     * 服务启动
     */
   def start(): Unit = {
+
     try {
-
-
       val buf = new Array[Byte](1024)
       val recPacket = new DatagramPacket(buf, buf.length)
 
@@ -147,91 +146,114 @@ class Tracer {
       // this.heartBeatHandler()
 
       while (true) {
+
         util.log(0, "waiting for the packet from the client")
         Server.receive(recPacket)
         val receiveMessage = new String(recPacket.getData())
-        util.log(0, "the client msg: " + receiveMessage)
+        util.log(0, "the client msg: " + receiveMessage + "\n")
 
-        val msgArr = receiveMessage.split(util._split_tag)
-        val bodyArr = msgArr(3).split(util._body_split_tag) //name--other
+        try {
 
-        //判断注册状态
-        if (!this._trace_list(bodyArr(0)).status && util.toInt(msgArr(0)) != Directive.REGISTER) {
-          Server.send(Directive.msgClose(recPacket, "you should register first!"))
-        } else {
-          util.toInt(msgArr(0)) match {
+          val msgArr = receiveMessage.split(util._split_tag)
+          val bodyArr = msgArr(3).split(util._body_split_tag) //name--other
 
-            case Directive.PING => {
-              //name
-              this.updateUacTime(msgArr(3))
-              Server.send(Directive.msgPong(recPacket))
+          //判断注册状态
+          if ((!this._trace_list.contains(bodyArr(0)) || !this._trace_list(bodyArr(0)).status) && util.toInt(msgArr(0)) != Directive.REGISTER) {
+
+            util.log(0, bodyArr(0))
+            var msgStr: String = ""
+            if (!this._trace_list.isEmpty) {
+              this._trace_list.foreach(e => {
+                val (k, v) = e
+                msgStr = msgStr + k
+              })
             }
+            util.log(0, msgStr + this._trace_list.contains(new String(bodyArr(0))))
 
-            case Directive.REGISTER => {
-              //name--host--port
-              if (bodyArr.length < 3) {
-                util.log(Directive.REGISTER, msgArr(3) + this._registerErr(0))
-                Server.send(Directive.msgClose(recPacket, this._registerErr(0)))
-              } else {
+            Server.send(Directive.msgClose(recPacket, "register first!"))
+          } else {
+            util.toInt(msgArr(0)) match {
 
-                val UacName = bodyArr(0) + bodyArr(1) + bodyArr(2)
+              case Directive.PING => {
+                //name
+                this.updateUacTime(msgArr(3))
+                Server.send(Directive.msgPong(recPacket))
+              }
 
-                if (this.record(UacName, new InetSocketAddress(recPacket.getAddress(), recPacket.getPort()),
-                  new InetSocketAddress(bodyArr(1), util.toInt(bodyArr(2))))) {
-                  Server.send(Directive.msgRegisterSuccessfully(recPacket, UacName))
+              case Directive.REGISTER => {
+                //name--host--port
+                if (bodyArr.length < 3) {
+                  util.log(Directive.REGISTER, msgArr(3) + this._registerErr(0))
+                  Server.send(Directive.msgClose(recPacket, this._registerErr(0)))
                 } else {
-                  util.log(Directive.REGISTER, this._registerErr(0))
-                  Server.send(Directive.msgClose(recPacket, UacName + this._registerErr(1)))
+
+                  val UacName = bodyArr(0)
+
+                  if (this.record(UacName, new InetSocketAddress(recPacket.getAddress(), recPacket.getPort()),
+                    new InetSocketAddress(bodyArr(1), util.toInt(bodyArr(2))))) {
+                    Server.send(Directive.msgRegisterSuccessfully(recPacket, UacName))
+                  } else {
+                    util.log(Directive.REGISTER, this._registerErr(0))
+                    Server.send(Directive.msgClose(recPacket, UacName + this._registerErr(1)))
+                  }
                 }
               }
-            }
 
-            case Directive.UNREGISTER => {
-              //name
-              if (this.record(msgArr(3), null, null, false)) {
-                Server.send(Directive.msgClose(recPacket))
+              case Directive.UNREGISTER => {
+                //name
+                if (this.record(msgArr(3), null, null, false)) {
+                  Server.send(Directive.msgClose(recPacket))
+                }
+
               }
 
-            }
+              case Directive.CONNECT_PEAR_REQUEST => {
+                //nameA--nameB
+                if (!this.detect(bodyArr(0), bodyArr(1)) || bodyArr(0).equals(bodyArr(1))) {
+                  Server.send(Directive.msgCanNotPeer(recPacket, msgArr(0) + util._body_split_tag + "A or B not exist or A==B"))
+                } else {
+                  val UacA = this._trace_list(bodyArr(0))
+                  val UacB = this._trace_list(bodyArr(1))
+                  val msgStrB: String = msgArr(3) + util._body_split_tag + util.addressToString(UacA.publicAddress) + util._body_split_tag + util.addressToString(UacA.localAddress)
+                  Server.send(Directive.msgHoling(UacB.publicAddress.getAddress(), UacB.publicAddress.getPort(), msgStrB))
 
-            case Directive.CONNECT_PEAR_REQUEST => {
-              //nameA--nameB
-              if (!this.detect(bodyArr(0), bodyArr(1)) || bodyArr(0).equals(bodyArr(1))) {
-                Server.send(Directive.msgCanNotPeer(recPacket, msgArr(0) + util._body_split_tag + "A or B not exist or A==B"))
-              } else {
+                  val msgStrA: String = msgArr(3) + util._body_split_tag + util.addressToString(UacB.publicAddress) + util._body_split_tag + util.addressToString(UacB.localAddress)
+                  Server.send(Directive.msgHoling(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgStrA))
+                }
+              }
+
+              case Directive.HOLE_END => {
+                //nameA--nameB
                 val UacA = this._trace_list(bodyArr(0))
-                val UacB = this._trace_list(bodyArr(1))
-                val msgStrB: String = msgArr(3) + util._body_split_tag + util.addressToString(UacA.publicAddress) + util._body_split_tag + util.addressToString(UacA.localAddress)
-                Server.send(Directive.msgHoling(UacB.publicAddress.getAddress(), UacB.publicAddress.getPort(), msgStrB))
+                Server.send(Directive.msgHoleEnd(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgArr(3)))
 
-                val msgStrA: String = msgArr(3) + util._body_split_tag + util.addressToString(UacB.publicAddress) + util._body_split_tag + util.addressToString(UacB.localAddress)
-                Server.send(Directive.msgHoling(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgStrA))
+                val Uac = this._trace_list(bodyArr(1))
+                Server.send(Directive.msgHoleEnd(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgArr(3)))
               }
-            }
 
-            case Directive.HOLE_END => {
-              //nameA--nameB
-              val UacA = this._trace_list(bodyArr(0))
-              Server.send(Directive.msgHoleEnd(UacA.publicAddress.getAddress(), UacA.publicAddress.getPort(), msgArr(3)))
-            }
-
-            case Directive.USER_LIST => {
-              var msgStr: String = "list"
-              if (!this._trace_list.isEmpty) {
-                this._trace_list.foreach(e => {
-                  val (k, v) = e
-                  msgStr = msgStr + util._body_split_tag + k
-                })
+              case Directive.USER_LIST => {
+                var msgStr: String = "list"
+                if (!this._trace_list.isEmpty) {
+                  this._trace_list.foreach(e => {
+                    val (k, v) = e
+                    msgStr = msgStr + util._body_split_tag + k
+                  })
+                }
+                Server.send(Directive.msgUserList(recPacket, msgStr))
               }
-              Server.send(Directive.msgUserList(recPacket, msgStr))
             }
           }
-        }
 
+        } catch {
+          case ex: Exception => {
+            Server.send(Directive.msgSent(recPacket.getAddress(), recPacket.getPort(), "the msg is wrong ,check first"))
+            util.log(-1, "some exception happen:" + ex.getMessage())
+          }
+        }
       }
     } catch {
       case ex: Exception => {
-        util.log(-1, "some exception happen,please restart the tracer")
+        util.log(-1, "some exception happen,please restart the tracer" + ex.getMessage())
       }
     }
 

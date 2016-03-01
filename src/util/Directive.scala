@@ -38,6 +38,8 @@ object Directive {
 
   val CLOSE_CONNECT: Int = 21
 
+  val SENT_MSG: Int = 22
+
 
   /**
     * 构建信息字符串
@@ -50,8 +52,9 @@ object Directive {
     * @return
     */
   def directiveBuilder(dec: Int, th: Int, th_tag: String, body: String, split_tag: String): String = {
-
-    return dec.toString() + split_tag + th.toString() + split_tag + th_tag + split_tag + body
+    val str = dec.toString() + split_tag + th.toString() + split_tag + th_tag + split_tag + body
+    util.log(0, str)
+    return str
   }
 
 
@@ -87,6 +90,10 @@ object Directive {
     return this.msgBuilder(Directive.CAN_CONNECT_PEAR, 1, "00", msg, address, port)
   }
 
+  def msgPeerRes(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.CONNECT_PEAR_REQUEST, 1, "00", msg, address, port)
+  }
+
   //  def msgCanNotPeer(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
   //    return this.msgBuilder(Directive.CAN_NOT_CONNECT_PEAR, 1, "00", msg, address, port)
   //  }
@@ -105,10 +112,26 @@ object Directive {
   }
 
   def msgRegister(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
-    return this.msgBuilder(Directive.UNREGISTER, 1, "00", msg, address, port)
+    return this.msgBuilder(Directive.REGISTER, 1, "00", msg, address, port)
   }
 
   def msgUserList(dst: DatagramPacket, msg: String = ""): DatagramPacket = {
     return this.msgBuilder(Directive.USER_LIST, 1, "00", msg, dst.getAddress(), dst.getPort())
+  }
+
+  def msgUserList1(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.USER_LIST, 1, "00", msg, address, port)
+  }
+
+  /**
+    * 普通信息发送
+    *
+    * @param address
+    * @param port
+    * @param msg
+    * @return
+    */
+  def msgSent(address: InetAddress, port: Int, msg: String = ""): DatagramPacket = {
+    return this.msgBuilder(Directive.SENT_MSG, 1, "00", msg, address, port)
   }
 }

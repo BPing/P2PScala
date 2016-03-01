@@ -21,6 +21,9 @@ class UacInfo(pul: InetSocketAddress, loc: InetSocketAddress) {
     */
   var status: Boolean = true
 
+  //是否可以点对点连接
+  var peerStatus: Boolean = false
+
   var heartbeatTime: String = util.getDateTime()
 
 }

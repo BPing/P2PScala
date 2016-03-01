@@ -15,7 +15,7 @@ object util {
 
   val _ping_interval: Long = 10 //ms
 
-  val _server_hostname: String = "127.0.0.1"
+  val _server_hostname: String = "172.16.1.43"
 
   val _server_port: Int = 4321
 
