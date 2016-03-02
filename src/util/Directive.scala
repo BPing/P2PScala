@@ -53,7 +53,6 @@ object Directive {
     */
   def directiveBuilder(dec: Int, th: Int, th_tag: String, body: String, split_tag: String): String = {
     val str = dec.toString() + split_tag + th.toString() + split_tag + th_tag + split_tag + body
-    util.log(0, str)
     return str
   }
 
@@ -70,7 +69,8 @@ object Directive {
     * @return
     */
   def msgBuilder(dec: Int, th: Int, th_tag: String, body: String, address: InetAddress = null, port: Int = 0): DatagramPacket = {
-    val msgByte: Array[Byte] = this.directiveBuilder(dec, th, th_tag, body, util._split_tag).getBytes()
+    val msgByte: Array[Byte] = this.directiveBuilder(dec, th, th_tag, body, util._split_tag).trim().getBytes()
+    util.log(0, msgByte.length + new String(msgByte))
     return new DatagramPacket(msgByte, msgByte.length, address, port)
   }
 

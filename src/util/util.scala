@@ -15,7 +15,7 @@ object util {
 
   val _ping_interval: Long = 10 //ms
 
-  val _server_hostname: String = "172.16.1.43"
+  val _server_hostname: String = "172.16.1.68"
 
   val _server_port: Int = 4321
 
@@ -91,5 +91,26 @@ object util {
     return new InetSocketAddress(arr(0), util.toInt(arr(1)))
   }
 
+  /**
+    * 清空
+    *
+    * @param arg
+    */
+  def cleanArrByte(arg: Array[Byte]): Unit = {
+    for (k <- 0 to (arg.length - 1)) {
+      arg(k) = 0.toByte
+    }
+  }
+
+  /**
+    * 去掉头尾空格
+    *
+    * @param arg
+    */
+  def trimArr(arg: Array[String]): Unit = {
+    for (k <- 0 to (arg.length - 1)) {
+      arg(k) = arg(k).trim()
+    }
+  }
 
 }

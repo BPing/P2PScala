@@ -38,10 +38,11 @@ class Tracer {
     * @return Boolean
     */
   def detect(A: String, B: String): Boolean = {
+
     if (this._server == null) return false
 
     if (!this._trace_list.contains(A) || !this._trace_list.contains(B)
-      || this._trace_list(A).status || this._trace_list(B).status
+      || !this._trace_list(A).status || !this._trace_list(B).status
     ) {
       return false
     }
@@ -135,18 +136,18 @@ class Tracer {
     * 服务启动
     */
   def start(): Unit = {
-
+    var Server: UDPSocket = null
     try {
       val buf = new Array[Byte](1024)
       val recPacket = new DatagramPacket(buf, buf.length)
 
       this._server = new UDPSocket(this._port)
-      val Server = this._server
+      Server = this._server
 
       // this.heartBeatHandler()
 
       while (true) {
-
+        util.cleanArrByte(buf)
         util.log(0, "waiting for the packet from the client")
         Server.receive(recPacket)
         val receiveMessage = new String(recPacket.getData())
@@ -156,20 +157,10 @@ class Tracer {
 
           val msgArr = receiveMessage.split(util._split_tag)
           val bodyArr = msgArr(3).split(util._body_split_tag) //name--other
-
+          util.trimArr(msgArr)
+          util.trimArr(bodyArr)
           //判断注册状态
           if ((!this._trace_list.contains(bodyArr(0)) || !this._trace_list(bodyArr(0)).status) && util.toInt(msgArr(0)) != Directive.REGISTER) {
-
-            util.log(0, bodyArr(0))
-            var msgStr: String = ""
-            if (!this._trace_list.isEmpty) {
-              this._trace_list.foreach(e => {
-                val (k, v) = e
-                msgStr = msgStr + k
-              })
-            }
-            util.log(0, msgStr + this._trace_list.contains(new String(bodyArr(0))))
-
             Server.send(Directive.msgClose(recPacket, "register first!"))
           } else {
             util.toInt(msgArr(0)) match {
@@ -209,9 +200,10 @@ class Tracer {
 
               case Directive.CONNECT_PEAR_REQUEST => {
                 //nameA--nameB
-                if (!this.detect(bodyArr(0), bodyArr(1)) || bodyArr(0).equals(bodyArr(1))) {
+                if (bodyArr.length < 2 || !this.detect(bodyArr(0), bodyArr(1)) || bodyArr(0).equals(bodyArr(1))) {
                   Server.send(Directive.msgCanNotPeer(recPacket, msgArr(0) + util._body_split_tag + "A or B not exist or A==B"))
                 } else {
+
                   val UacA = this._trace_list(bodyArr(0))
                   val UacB = this._trace_list(bodyArr(1))
                   val msgStrB: String = msgArr(3) + util._body_split_tag + util.addressToString(UacA.publicAddress) + util._body_split_tag + util.addressToString(UacA.localAddress)
@@ -248,13 +240,18 @@ class Tracer {
           case ex: Exception => {
             Server.send(Directive.msgSent(recPacket.getAddress(), recPacket.getPort(), "the msg is wrong ,check first"))
             util.log(-1, "some exception happen:" + ex.getMessage())
+            ex.printStackTrace()
           }
         }
       }
+
+      Server.close()
     } catch {
       case ex: Exception => {
         util.log(-1, "some exception happen,please restart the tracer" + ex.getMessage())
       }
+        if (null != Server)
+          Server.close()
     }
 
   }

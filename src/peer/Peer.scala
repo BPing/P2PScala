@@ -36,7 +36,9 @@ class Peer {
       this._client = new UDPSocket(this._port)
       val Client = this._client
       util.log(0, "waiting for the packet from the other")
+
       while (true) {
+        util.cleanArrByte(buf)
         Client.receive(recPacket)
         val receiveMessage = new String(recPacket.getData())
         util.log(0, "the msg: " + receiveMessage)
@@ -68,7 +70,7 @@ class Peer {
 
           case Directive.CONNECT_SUCCESS => {
             //UacName
-            this._own_id = msgArr(3)
+            this._own_id = msgArr(3).trim()
             util.log(0, "the ownId:" + this._own_id)
           }
 
